@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>User Management</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      max-width: 500px;
+      margin: 60px auto;
+      padding: 0 20px;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 24px; }
+    label { display: block; margin-bottom: 4px; font-weight: 600; }
+    input {
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 16px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+    #create-user-btn {
+      padding: 10px 24px;
+      font-size: 1rem;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #message {
+      margin-top: 16px;
+      font-size: 0.95rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Create User</h1>
+  <form id="create-user-form">
+    <label for="name">Name</label>
+    <input type="text" id="name" placeholder="Enter name" required />
+
+    <label for="email">Email</label>
+    <input type="email" id="email" placeholder="Enter email" required />
+
+    <button type="submit" id="create-user-btn">Create User</button>
+  </form>
+  <p id="message"></p>
+
+  <script>
+    // PostHog initialization
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]);t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(a!==void 0?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return a!==void 0&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys onSessionId".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init('POSTHOG_API_KEY', { api_host: 'https://eu.i.posthog.com' });
+
+    // A/B Test: experiment-user-button-style
+    posthog.onFeatureFlags(function() {
+      const btn = document.getElementById('create-user-btn');
+      const variant = posthog.getFeatureFlag('experiment-user-button-style');
+      if (variant === 'test') {
+        btn.style.backgroundColor = 'blue';
+      } else {
+        // control group
+        btn.style.backgroundColor = 'green';
+      }
+    });
+
+    document.getElementById('create-user-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const name = document.getElementById('name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const msg = document.getElementById('message');
+
+      try {
+        const res = await fetch('/api/v1/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, email }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          msg.style.color = 'green';
+          msg.textContent = 'User created: ' + data.user.name;
+          document.getElementById('name').value = '';
+          document.getElementById('email').value = '';
+        } else {
+          msg.style.color = 'red';
+          msg.textContent = 'Error: ' + data.error;
+        }
+      } catch (err) {
+        msg.style.color = 'red';
+        msg.textContent = 'Request failed.';
+      }
+    });
+  </script>
+</body>
+</html>
