@@ -1,33 +1,33 @@
-import fastify, { FastifyRequest } from 'fastify';
+import Fastify, { FastifyRequest } from 'fastify';
+import fastifyStatic from '@fastify/static';
 import { PrismaClient } from '@prisma/client';
+import { PostHog } from 'posthog-node';
 import { isValidEmail } from './services/isValidEmail';
 import path from 'path';
-import fs from 'fs';
 
 const prisma = new PrismaClient();
-const server = fastify();
+const server = Fastify();
 
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '127.0.0.1';
 
-// PostHog setup
-import { PostHog } from 'posthog-node';
+// ─── PostHog (server-side) ───────────────────────────────────
 const posthogClient = new PostHog(
-  process.env.POSTHOG_API_KEY || 'POSTHOG_API_KEY',
-  { host: process.env.POSTHOG_HOST || 'https://eu.i.posthog.com' }
+  process.env.POSTHOG_API_KEY ?? '',
+  { host: process.env.POSTHOG_HOST ?? 'https://eu.i.posthog.com' }
 );
 
-// Serve index.html at root
-server.get('/', async (_, reply) => {
-  const filePath = path.join(__dirname, 'public', 'index.html');
-  const html = fs.readFileSync(filePath, 'utf-8');
-  return reply.type('text/html').send(html);
+// ─── Serve static files from dist/public ────────────────────
+server.register(fastifyStatic, {
+  root: path.join(__dirname, 'public'),
+  prefix: '/',
 });
 
 /**
  * USERS CRUD
  */
-// Get all users
+
+// GET all users
 server.get('/api/v1/users', async (_, reply) => {
   try {
     const users = await prisma.user.findMany();
@@ -37,10 +37,10 @@ server.get('/api/v1/users', async (_, reply) => {
   }
 });
 
-// Get single user by ID
+// GET single user
 server.get('/api/v1/users/:id', async (
   request: FastifyRequest<{ Params: { id: string } }>,
-  reply
+  reply,
 ) => {
   try {
     const { id } = request.params;
@@ -54,12 +54,10 @@ server.get('/api/v1/users/:id', async (
   }
 });
 
-// Create a user
+// POST create user  →  track event: user_created
 server.post('/api/v1/users', async (
-  request: FastifyRequest<{
-    Body: { name: string; email: string };
-  }>,
-  reply
+  request: FastifyRequest<{ Body: { name: string; email: string } }>,
+  reply,
 ) => {
   try {
     const { name, email } = request.body;
@@ -68,9 +66,7 @@ server.post('/api/v1/users', async (
       return reply.status(400).send({ error: 'Invalid email' });
     }
 
-    const user = await prisma.user.create({
-      data: { name, email },
-    });
+    const user = await prisma.user.create({ data: { name, email } });
 
     // Track: user created
     posthogClient.capture({
@@ -85,13 +81,10 @@ server.post('/api/v1/users', async (
   }
 });
 
-// Update a user
+// PUT update user
 server.put('/api/v1/users/:id', async (
-  request: FastifyRequest<{
-    Params: { id: string };
-    Body: { name?: string; email?: string };
-  }>,
-  reply
+  request: FastifyRequest<{ Params: { id: string }; Body: { name?: string; email?: string } }>,
+  reply,
 ) => {
   try {
     const { id } = request.params;
@@ -106,10 +99,10 @@ server.put('/api/v1/users/:id', async (
   }
 });
 
-// Delete a user
+// DELETE user
 server.delete('/api/v1/users/:id', async (
   request: FastifyRequest<{ Params: { id: string } }>,
-  reply
+  reply,
 ) => {
   try {
     const { id } = request.params;
@@ -123,7 +116,8 @@ server.delete('/api/v1/users/:id', async (
 /**
  * POSTS CRUD
  */
-// Get all posts
+
+// GET all posts
 server.get('/api/v1/posts', async (_, reply) => {
   try {
     const posts = await prisma.post.findMany({ include: { user: true } });
@@ -133,10 +127,10 @@ server.get('/api/v1/posts', async (_, reply) => {
   }
 });
 
-// Get single post by ID
+// GET single post
 server.get('/api/v1/posts/:id', async (
   request: FastifyRequest<{ Params: { id: string } }>,
-  reply
+  reply,
 ) => {
   try {
     const { id } = request.params;
@@ -150,12 +144,10 @@ server.get('/api/v1/posts/:id', async (
   }
 });
 
-// Create a post — guarded by feature toggle
+// POST create post  →  feature toggle guard  +  track event: post_created
 server.post('/api/v1/posts', async (
-  request: FastifyRequest<{
-    Body: { title: string; content?: string; userId: number };
-  }>,
-  reply
+  request: FastifyRequest<{ Body: { title: string; content?: string; userId: number } }>,
+  reply,
 ) => {
   try {
     const { title, content = '', userId } = request.body;
@@ -164,10 +156,10 @@ server.post('/api/v1/posts', async (
       return reply.status(400).send({ error: 'title and userId are required' });
     }
 
-    // Feature toggle: is-post-creation-enabled
+    // ── Feature Toggle: is-post-creation-enabled ──────────────
     const isPostCreationEnabled = await posthogClient.isFeatureEnabled(
       'is-post-creation-enabled',
-      String(userId)
+      String(userId),
     );
 
     if (!isPostCreationEnabled) {
@@ -175,11 +167,7 @@ server.post('/api/v1/posts', async (
     }
 
     const post = await prisma.post.create({
-      data: {
-        title,
-        content,
-        user: { connect: { id: userId } },
-      },
+      data: { title, content, user: { connect: { id: userId } } },
     });
 
     // Track: post created
@@ -195,13 +183,10 @@ server.post('/api/v1/posts', async (
   }
 });
 
-// Update a post
+// PUT update post
 server.put('/api/v1/posts/:id', async (
-  request: FastifyRequest<{
-    Params: { id: string };
-    Body: { title?: string; content?: string };
-  }>,
-  reply
+  request: FastifyRequest<{ Params: { id: string }; Body: { title?: string; content?: string } }>,
+  reply,
 ) => {
   try {
     const { id } = request.params;
@@ -216,10 +201,10 @@ server.put('/api/v1/posts/:id', async (
   }
 });
 
-// Delete a post
+// DELETE post
 server.delete('/api/v1/posts/:id', async (
   request: FastifyRequest<{ Params: { id: string } }>,
-  reply
+  reply,
 ) => {
   try {
     const { id } = request.params;
@@ -230,7 +215,7 @@ server.delete('/api/v1/posts/:id', async (
   }
 });
 
-// Start server
+// ─── Start server ─────────────────────────────────────────────
 server.listen({ host: HOST, port: Number(PORT) }, (err, address) => {
   if (err) {
     console.error(err);
